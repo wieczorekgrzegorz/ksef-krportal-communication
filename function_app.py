@@ -8,11 +8,13 @@ import sys
 
 # 3rd party imports
 import azure.functions as func
+from azure.storage.blob import BlobServiceClient
+
 
 # local imports
-from modules.connection_setup import main as setup_cosmosdb_connection
-from modules.get_query_from_body import main as get_query_from_body
-from modules.query_cosmosDB import main as query_cosmosDB
+from modules import connection_setup
+from modules import get_query_from_body
+from modules import query_cosmosDB
 from modules.utilities.exception_handler import handle_exception
 from modules.utilities.query_cosmosDB_error import QueryCosmosDBError
 
@@ -24,9 +26,11 @@ setup_logger(level=logging.INFO)
 
 
 # declare environment constants
-CONNECTION_STRING: str = os.environ["AZURE_COSMOSDB_CONNECTION_STRING"]
-DATABASE_ID: str = os.environ["DATABASE_ID"]
-CONTAINER_ID: str = os.environ["CONTAINER_ID"]
+CONNECTION_STRING: str = os.environ["COSMOSDB_CONNECTION_STRING"]
+DATABASE_ID: str = os.environ["COSMOSDB_DATABASE_ID"]
+CONTAINER_ID: str = os.environ["COSMOSDB_CONTAINER_ID"]
+BLOB_SERVICE_CONNECTION_STRING: str = os.environ["BLOB_CONNECTION_STRING"]
+BLOB_CONTAINER_NAME: str = os.environ["BLOB_CONTAINER_NAME"]
 
 
 # declare default HTTP response variables
@@ -38,9 +42,45 @@ HEADERS: dict[str, str] = {"Content-Type": "application/json"}
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
 
 
+@app.function_name(name="download_BLOB")
+@app.route(route="downloadblob", methods=["POST", "GET"])
+def downloadblob_app(
+    req: func.HttpRequest,
+) -> func.HttpResponse:
+    """
+    _summary_
+
+    Args:
+        req (func.HttpRequest): _description_
+
+    Returns:
+        func.HttpResponse: _description_
+    """
+
+    if req.params.get("single_file_download") == "true":
+        blob_name = req.params.get("invoice_id") + ".xml"
+
+        client = BlobServiceClient.from_connection_string(
+            conn_str=BLOB_SERVICE_CONNECTION_STRING
+        )
+        container_client = client.get_container_client(container=BLOB_CONTAINER_NAME)
+        blob_client = container_client.get_blob_client(blob=blob_name)
+
+        blob = blob_client.download_blob()
+        invoice = blob.readall()
+
+        print(f"Blob downloaded: {blob_name}")
+        print(f"Blob content: {invoice}")
+        return func.HttpResponse(body=invoice, status_code=200)
+
+    return func.HttpResponse(
+        body=b"Package download not implemented yet.", status_code=200
+    )
+
+
 @app.function_name(name="query_cosmosDB")
 @app.route(route="querycosmosdb", methods=["POST"])
-def main(
+def querycosmosdb_app(
     req: func.HttpRequest,
 ) -> func.HttpResponse:
     """
@@ -104,15 +144,17 @@ def main(
     try:
         log.info(msg="Query_CosmosDB received a request.")
 
-        sql_query = get_query_from_body(req=req)
+        sql_query = get_query_from_body.main(req=req)
 
-        container = setup_cosmosdb_connection(
+        container = connection_setup.main(
             connection_string=CONNECTION_STRING,
             database_id=DATABASE_ID,
             container_id=CONTAINER_ID,
         )
 
-        body, status_code = query_cosmosDB(container=container, sql_query=sql_query)
+        body, status_code = query_cosmosDB.main(
+            container=container, sql_query=sql_query
+        )
 
         log.info(msg="Query_CosmosDB retrieved items from CosmosDB successfully.")
 
@@ -130,7 +172,8 @@ def main(
         log.info(
             msg=f"Query_CosmosDB returned HTTP response with status code {status_code}."
         )
-        return func.HttpResponse(  # pylint: disable=W0150 # "finally" block always returns a value
+        return func.HttpResponse(  # pylint: disable=return-in-finally, lost-exception
+            # "overshadowing" is an expected behaviour in this case
             body=str(object=body),
             headers=HEADERS,
             status_code=status_code,
