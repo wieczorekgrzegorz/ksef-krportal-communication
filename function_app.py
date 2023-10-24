@@ -56,9 +56,18 @@ def downloadblob_app(
     Returns:
         func.HttpResponse: _description_
     """
+    HEADERS: dict[str, str] = {"Content-Type": "application/xml"}
+
+    invoice_id = req.params.get("invoice_id")
+
+    if invoice_id is None:
+        return func.HttpResponse(
+            body=b"Please provide invoice_id parameter in the request.",
+            status_code=http_client.BAD_REQUEST,
+        )
 
     if req.params.get("single_file_download") == "true":
-        blob_name = req.params.get("invoice_id") + ".xml"
+        blob_name = req.params.get("invoice_id") + ".xml"  # type: ignore # invoice_id is None is checked before
 
         client = BlobServiceClient.from_connection_string(
             conn_str=BLOB_SERVICE_CONNECTION_STRING
@@ -71,7 +80,7 @@ def downloadblob_app(
 
         print(f"Blob downloaded: {blob_name}")
         print(f"Blob content: {invoice}")
-        return func.HttpResponse(body=invoice, status_code=200)
+        return func.HttpResponse(body=invoice, status_code=200, headers=HEADERS)
 
     return func.HttpResponse(
         body=b"Package download not implemented yet.", status_code=200
