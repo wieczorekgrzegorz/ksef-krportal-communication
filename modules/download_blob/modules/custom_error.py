@@ -8,7 +8,7 @@ from typing import Optional
 log = logging.getLogger(name="log." + __name__)
 
 
-class QueryCosmosDBError(Exception):
+class DownloadBlobError(Exception):
     """
     Custom exception class for for handling common errors in query_cosmosDB.
 
@@ -50,44 +50,58 @@ class QueryCosmosDBError(Exception):
         )
     """
 
+    exception_type: str
+    details: str
+    message: str
+    status_code: int
+
     def __init__(
         self,
         exception_type: str,
-        details: Optional[str],
-        message: Optional[str],
-        status_code: Optional[int],
+        details: str,
+        message: str,
+        status_code: int,
     ) -> None:
         self.exception_type = exception_type
         self.details = details
         self.message = message
         self.status_code = status_code
 
-        self.error_response = self.build_error_response()
+        error_response_dict = self.build_error_response()
+        self.error_response = self.convert_to_json(
+            error_response_dict=error_response_dict
+        )
+        log.exception(msg=self.error_response)
 
     def __str__(self) -> str:
-        return f"QueryCosmosDBError for passed {self.exception_type} exception"
+        return f"DownloadBlobError for passed {self.exception_type} exception."
 
-    def build_error_response(self) -> str:
+    def build_error_response(self) -> dict[str, Optional[str] | Optional[int]]:
         """
         Builds error_response from exception info following the format:
             {
-                "exception": exception_type,
-                "message": message,
-                "status_code": status_code,
-                "details": details,
+                "exception" (str): exception_type,
+                "message" (Optional[str]): message,
+                "status_code" (Optional[int]): status_code,
+                "details" (Optional[str]): details,
             }
-
-        Returns:
-            error_response (str):
-                JSON string representing error_response_dict. In case of error, returns string representation of error_response_dict (without JSON formatting).
         """
-        error_response_dict = {
+        return {
             "exception": self.exception_type,
             "message": self.message,
             "status_code": self.status_code,
             "details": self.details,
         }
 
+    def convert_to_json(self, error_response_dict) -> str:
+        """
+        Converts error_response_dict to JSON string. Provides fallback in case of TypeError.
+
+        Returns:
+            error_response (str):
+                JSON string representing error_response_dict. In case of error, returns string representation\
+                of error_response_dict (without JSON formatting).
+        """
         try:
             error_response = json.dumps(
                 obj=error_response_dict, indent=4, sort_keys=False, ensure_ascii=False
@@ -105,10 +119,12 @@ class QueryCosmosDBError(Exception):
                     ensure_ascii=False,
                 )
 
-            except Exception:
+            except Exception:  # pylint: disable=W0718
+                # catching general exception is intentional here
                 # I can't think of a scenario where this would happen, but just in case.
                 log.warning(
-                    msg=f"Failed to convert error_response_dict to JSON after converting values to string. error_response_dict: {error_response_dict}"
+                    msg=f"Failed to convert error_response_dict to JSON after converting values to string.\
+                        error_response_dict: {error_response_dict}"
                 )
                 error_response = str(object=error_response_dict)
 

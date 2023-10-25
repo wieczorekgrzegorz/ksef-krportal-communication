@@ -11,7 +11,7 @@ from azure.cosmos import (
 from azure.core import exceptions as azure_exceptions
 
 
-from .utilities.query_cosmosDB_error import QueryCosmosDBError
+from .custom_error import QueryCosmosDBError
 
 log = logging.getLogger(name="log." + __name__)
 
@@ -49,15 +49,15 @@ def setup_cosmos_client(connection_string: str) -> CosmosClient:
             details=exc.message,
             message=custom_message,
             status_code=http_client.NOT_FOUND,
-        )
+        ) from exc
     except cosmos_exceptions.CosmosResourceNotFoundError as exc:
         custom_message = "CosmosDB host URL is invalid. Check connection string."
         raise QueryCosmosDBError(
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
-        )
+            status_code=exc.status_code,  # type: ignore
+        ) from exc
     except cosmos_exceptions.CosmosClientTimeoutError as exc:
         custom_message = "Request timeout."
         raise QueryCosmosDBError(
@@ -72,7 +72,7 @@ def setup_cosmos_client(connection_string: str) -> CosmosClient:
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
+            status_code=exc.status_code,  # type: ignore
         ) from exc
 
     log.debug(msg="CosmosDB connection set up succesfully.")
@@ -107,7 +107,7 @@ def setup_database_client(client: CosmosClient, database_id: str) -> DatabasePro
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
+            status_code=exc.status_code,  # type: ignore
         ) from exc
     except cosmos_exceptions.CosmosClientTimeoutError as exc:
         custom_message = "Request timeout."
@@ -140,7 +140,8 @@ def setup_container_client(
             A ContainerProxy instance representing the retrieved database.
 
     Raises:
-        None. ContainerProxy instance is not a live object. Whether it exists or not is not checked until a query is run and query items are unpacked from retrieved Iterable.
+        None. ContainerProxy instance is not a live object. Whether it exists or not is not checked\
+        until a query is run and query items are unpacked from retrieved Iterable.
     """
 
     log.debug(msg="Setting up CosmosDB ContainerProxy.")
@@ -153,7 +154,7 @@ def setup_container_client(
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
+            status_code=exc.status_code,  # type: ignore
         ) from exc
     except cosmos_exceptions.CosmosClientTimeoutError as exc:
         custom_message = "Request timeout."

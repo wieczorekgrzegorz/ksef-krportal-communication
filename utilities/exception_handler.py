@@ -1,25 +1,39 @@
 """Collects error details from the exception info tuple."""
 import json
 import logging
-from http import HTTPStatus
 import http.client as http_client
+from typing import Protocol
 
-from .query_cosmosDB_error import QueryCosmosDBError
+
+class CustomError(Protocol):  # pylint: disable=R0903 # intentional behaviour
+    """Protocol for custom error classes."""
+
+    details: str
+    error_response: str
+    exception_type: str
+    message: str
+    status_code: int
+
+
+# from modules.query_cosmosdb.modules.custom_error import QueryCosmosDBError
 
 log = logging.getLogger(name="log." + __name__)
 
 
-def handle_exception(
-    exc: QueryCosmosDBError,
-) -> tuple[str, HTTPStatus | int | None]:
+def handle_cosmosdb_error(
+    exc: CustomError,
+) -> tuple[str, int]:
     """
-    Handles QueryCosmosDBError exceptions in order to allow query_cosmosDB to pass detailed information on encountered exception into HTTP response body.
+    Handles QueryCosmosDBError exceptions in order to allow query_cosmosDB to pass detailed information on encountered\
+    exception into HTTP response body.
 
     Parameters:
-        exc (QueryCosmosDBError): QueryCosmosDBError exception.
+        exc (CustomError): a custom error with attirbutes: details (str), error_response (str), exception_type (str),\
+            message (str), status_code (int).
 
     Returns:
-        error_response (str): JSON string representing a dictionary of QueryCosmosDBError's attributes following the format:
+        error_response (str): JSON string representing a dictionary of QueryCosmosDBError's attributes\
+        following the format:
             {
                 "exception": exception_type,
                 "message": message,
@@ -27,8 +41,6 @@ def handle_exception(
                 "details": details,
             },
         status_code (int): HTTP status code corresponding to the exception, as per common HTTP status codes.
-    Raises:
-        QueryCosmosDBError: If failed to find error_response or status_code in exc.
     """
     try:
         exception_type = exc.exception_type
@@ -39,7 +51,7 @@ def handle_exception(
         )
 
         return error_response, status_code
-    except Exception as exception:
+    except Exception as exception:  # pylint: disable=W0718
         # If failed to find error_response or status_code in exc.
         # I can't imagine how this could happen, but just in case.
         exception_type = exc.__class__.__name__

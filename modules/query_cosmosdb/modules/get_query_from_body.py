@@ -1,10 +1,11 @@
 """Facilitates process of querying CosmosDB container."""
 import http.client as http_client
 import logging
+import sys
 
 import azure.functions as func
 
-from .utilities.query_cosmosDB_error import QueryCosmosDBError
+from .custom_error import QueryCosmosDBError
 
 
 log = logging.getLogger(name="log." + __name__)
@@ -32,7 +33,7 @@ def get_json_from_payload(payload: func.HttpRequest) -> dict:
         custom_message = "Failed to get request's body or request's body is empty."
         raise QueryCosmosDBError(
             exception_type=exc.__class__.__name__,
-            details=None,
+            details=str(object=sys.exc_info()),
             message=custom_message,
             status_code=http_client.BAD_REQUEST,
         ) from exc
@@ -59,7 +60,7 @@ def get_query_from_payload(json_payload: dict) -> str:
         custom_message = "Request's body missing 'query' field."
         raise QueryCosmosDBError(
             exception_type=exc.__class__.__name__,
-            details=None,
+            details=str(object=sys.exc_info()),
             message=custom_message,
             status_code=http_client.BAD_REQUEST,
         ) from exc

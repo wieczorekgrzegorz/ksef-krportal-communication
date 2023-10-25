@@ -1,42 +1,21 @@
 """HTTP trigger function to query CosmosDB database."""
 
 # imports
-import http.client as http_client
 import logging
-import os
-import sys
 
 # 3rd party imports
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient
-
 
 # local imports
-from modules import connection_setup
-from modules import get_query_from_body
-from modules import query_cosmosDB
-from modules.utilities.exception_handler import handle_exception
-from modules.utilities.query_cosmosDB_error import QueryCosmosDBError
-
-from modules.utilities.setup_logger import setup_logger
+from modules.query_cosmosdb import query_cosmosdb
+from modules.download_blob import download_blob
+from utilities import exception_handler, setup, parse_xsl
 
 # # setup logging
-log: logging.Logger = logging.getLogger(name="logging." + __name__)
-setup_logger(level=logging.INFO)
+log: logging.Logger = logging.getLogger(name="log." + __name__)
+setup.logger(level=logging.DEBUG)
 
-
-# declare environment constants
-CONNECTION_STRING: str = os.environ["COSMOSDB_CONNECTION_STRING"]
-DATABASE_ID: str = os.environ["COSMOSDB_DATABASE_ID"]
-CONTAINER_ID: str = os.environ["COSMOSDB_CONTAINER_ID"]
-BLOB_SERVICE_CONNECTION_STRING: str = os.environ["BLOB_CONNECTION_STRING"]
-BLOB_CONTAINER_NAME: str = os.environ["BLOB_CONTAINER_NAME"]
-
-
-# declare default HTTP response variables
-DEFAULT_STATUS_CODE: int = http_client.INTERNAL_SERVER_ERROR
-DEFAULT_BODY: str = "Unexpected error inside function query_cosmosDB, please contact function administrator."
-HEADERS: dict[str, str] = {"Content-Type": "application/json"}
+xlst_transformer = parse_xsl.transform_styl_xls_to_XLST(xsl_path="xsl/styl.xsl")
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)
@@ -56,34 +35,25 @@ def downloadblob_app(
     Returns:
         func.HttpResponse: _description_
     """
-    HEADERS: dict[str, str] = {"Content-Type": "application/xml"}
+    log.info(msg="download_BLOB received a request.")
 
-    invoice_id = req.params.get("invoice_id")
+    headers: dict[str, str] = {"Content-Type": "application/xml"}
 
-    if invoice_id is None:
-        return func.HttpResponse(
-            body=b"Please provide invoice_id parameter in the request.",
-            status_code=http_client.BAD_REQUEST,
-        )
+    body, status_code = download_blob.main(
+        req=req,
+        blob_connection_string=setup.BLOB_SERVICE_CONNECTION_STRING,
+        blob_container_name=setup.BLOB_CONTAINER_NAME,
+        exception_handler=exception_handler.handle_cosmosdb_error,
+        xslt_transformer=xlst_transformer,
+    )
 
-    if req.params.get("single_file_download") == "true":
-        blob_name = req.params.get("invoice_id") + ".xml"  # type: ignore # invoice_id is None is checked before
-
-        client = BlobServiceClient.from_connection_string(
-            conn_str=BLOB_SERVICE_CONNECTION_STRING
-        )
-        container_client = client.get_container_client(container=BLOB_CONTAINER_NAME)
-        blob_client = container_client.get_blob_client(blob=blob_name)
-
-        blob = blob_client.download_blob()
-        invoice = blob.readall()
-
-        print(f"Blob downloaded: {blob_name}")
-        print(f"Blob content: {invoice}")
-        return func.HttpResponse(body=invoice, status_code=200, headers=HEADERS)
-
+    log.info(
+        msg=f"download_BLOB returned HTTP response with status code {status_code}."
+    )
     return func.HttpResponse(
-        body=b"Package download not implemented yet.", status_code=200
+        body=body,
+        headers=headers,
+        status_code=status_code,
     )
 
 
@@ -96,26 +66,20 @@ def querycosmosdb_app(
     HTTP trigger function to query CosmosDB database.
 
     Parameters:
-        req (func.HttpRequest):
-            HTTP request sent to Azure Function's endpoint.
+        req (func.HttpRequest): HTTP request sent to Azure Function's endpoint.
 
     Attributes:
+        headers (dict[str, str], optional constant):
+            HTTP response headers. Constant. Default: {"Content-Type": "application/json"}.
 
     Global variables:
-        CONNECTION_STRING (str, constant):
+        COSMOSDB_CONNECTION_STRING (str, constant):
             CosmosDB connection string. Environment variable. Default: os.environ["AZURE_COSMOSDB_CONNECTION_STRING"].
-        DATABASE_ID (str, constant):
+        COSMOSDB_DATABASE_ID (str, constant):
             CosmosDB database ID. Environment variable. Default: os.environ["CONTAINER_ID"].
-        CONTAINER_ID (str, constant):
+        COSMOSDB_CONTAINER_ID (str, constant):
             CosmosDB container ID. Environment variable. Default: os.environ["CONTAINER_ID"].
 
-        BODY (str, constant):
-            HTTP response body. Default: Custom error message. Replaced with SQL query items in case of success,\
-            or with error details in case of error.
-        DEFAULT_STATUS_CODE (int, constant):
-            HTTP response status code for internal server error. Default: 500.
-        HEADERS (dict[str, str], optional constant):
-            HTTP response headers. Constant. Default: {"Content-Type": "application/json"}.
 
     Returns:
         func.HttpResponse: HTTP response in format: {
@@ -148,42 +112,23 @@ def querycosmosdb_app(
         as it is used to build the dictionary of query items in function query_cosmosDB.list_to_dict().
     """
     # if try/except block fails to handle exception, default HTTP response is returned
-    body = DEFAULT_BODY
-    status_code = DEFAULT_STATUS_CODE
-    try:
-        log.info(msg="Query_CosmosDB received a request.")
+    log.info(msg="Query_CosmosDB received a request.")
 
-        sql_query = get_query_from_body.main(req=req)
+    headers: dict[str, str] = {"Content-Type": "application/json"}
 
-        container = connection_setup.main(
-            connection_string=CONNECTION_STRING,
-            database_id=DATABASE_ID,
-            container_id=CONTAINER_ID,
-        )
+    body, status_code = query_cosmosdb.main(
+        req=req,
+        cosmosdb_connection_string=setup.COSMOSDB_CONNECTION_STRING,
+        cosmosdb_database_id=setup.COSMOSDB_DATABASE_ID,
+        cosmosdb_container_id=setup.COSMOSDB_CONTAINER_ID,
+        exception_handler=exception_handler.handle_cosmosdb_error,
+    )
 
-        body, status_code = query_cosmosDB.main(
-            container=container, sql_query=sql_query
-        )
-
-        log.info(msg="Query_CosmosDB retrieved items from CosmosDB successfully.")
-
-    except QueryCosmosDBError as exc:
-        exc_type, exc_value, exc_traceback = sys.exc_info()  # pylint: disable=W0612
-        body, status_code = handle_exception(exc=exc)
-
-    except Exception:  # pylint: disable=W0718
-        # if unhandled exception, return default HTTP response with error details and use default status code (500)
-        exc_type, exc_value, exc_traceback = sys.exc_info()
-        body = {"exception": exc_type.__name__, "message": exc_value}  # type: ignore
-        # "except Exceptions" is enough to know there is an exception with a name and a value
-
-    finally:
-        log.info(
-            msg=f"Query_CosmosDB returned HTTP response with status code {status_code}."
-        )
-        return func.HttpResponse(  # pylint: disable=return-in-finally, lost-exception
-            # "overshadowing" is an expected behaviour in this case
-            body=str(object=body),
-            headers=HEADERS,
-            status_code=status_code,
-        )
+    log.info(
+        msg=f"Query_CosmosDB returned HTTP response with status code {status_code}."
+    )
+    return func.HttpResponse(
+        body=str(body),
+        headers=headers,
+        status_code=status_code,
+    )

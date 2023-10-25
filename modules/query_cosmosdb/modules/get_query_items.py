@@ -1,19 +1,20 @@
-"""Facilitates process of querying CosmosDB container."""
+"""Module containing functions for querying CosmosDB container with an SQL query provided in HTTP request's body
+and returning query items in json format."""
+
 from collections.abc import Iterable
 import http.client as http_client
 import json
 import logging
-
+import sys
 from typing import Any
-
 
 from azure.cosmos import exceptions as cosmos_exceptions
 from azure.cosmos import ContainerProxy
 
-from .utilities.query_cosmosDB_error import QueryCosmosDBError
+from .custom_error import QueryCosmosDBError
 
 
-log = logging.getLogger(name="log." + __name__)
+log = logging.getLogger(name="log.query_cosmosdb." + __name__)
 
 
 def get_query_items(
@@ -27,7 +28,7 @@ def get_query_items(
         query (str): Query string obtained from get_requests_body().
 
     Returns:
-        query_items (Iterable[dict[str, Any]]): iterable object containing query items (invoices) as returned by CosmosDB.
+        query_items (Iterable[dict[str, Any]]): object containing query items (invoices) as returned by CosmosDB.
 
     Raises:
         QueryCosmosDBError:
@@ -55,8 +56,8 @@ def get_query_items(
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
-        )
+            status_code=exc.status_code,  # type: ignore
+        ) from exc
 
     except cosmos_exceptions.CosmosClientTimeoutError as exc:
         custom_message = "Request timeout."
@@ -73,7 +74,7 @@ def get_query_items(
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
+            status_code=exc.status_code,  # type: ignore
         ) from exc
 
     log.debug(msg="CosmosDB container queried succesfully.")
@@ -94,7 +95,8 @@ def iterable_to_dict(iterable: Iterable[dict[str, Any]]) -> dict:
     Raises:
         QueryCosmosDBError:
             If key 'id' not found in iterable. (KeyError)
-            If upon iterating through first item in iterable, it is found to carry an information on failed query. (cosmos_exceptions.CosmosHttpResponseError)
+            If upon iterating through first item in iterable, it is found to carry an information on failed query.\
+                (cosmos_exceptions.CosmosHttpResponseError)
     """
     log.debug(msg="Converting query items to dictionary.")
 
@@ -107,7 +109,7 @@ def iterable_to_dict(iterable: Iterable[dict[str, Any]]) -> dict:
                 custom_message = f"Key 'id' not found in {item}. Perhaps your query renamed column 'id'?"
                 raise QueryCosmosDBError(
                     exception_type=exc.__class__.__name__,
-                    details=None,
+                    details=str(object=sys.exc_info()),
                     message=custom_message,
                     status_code=http_client.BAD_REQUEST,
                 ) from exc
@@ -118,7 +120,7 @@ def iterable_to_dict(iterable: Iterable[dict[str, Any]]) -> dict:
             exception_type=exc.__class__.__name__,
             details=exc.message,
             message=custom_message,
-            status_code=exc.status_code,
+            status_code=exc.status_code,  # type: ignore
         ) from exc
 
     log.debug(msg="Query items converted to dictionary succesfully.")
@@ -149,7 +151,7 @@ def dict_to_json(query_items_dict: dict) -> str:
         custom_message = "Failed to convert query items dictionary to JSON string."
         raise QueryCosmosDBError(
             exception_type=exc.__class__.__name__,
-            details=None,
+            details=str(object=sys.exc_info()),
             message=custom_message,
             status_code=http_client.INTERNAL_SERVER_ERROR,
         ) from exc
@@ -161,68 +163,42 @@ def dict_to_json(query_items_dict: dict) -> str:
 def main(
     container: ContainerProxy,
     sql_query: str,
-    status_code: int = http_client.OK,
-    query_items: str = "Query returned no items.",
-) -> tuple[str, int]:
+    default_query_items: str = "Query returned no items.",
+) -> str:
     """
-    Queries CosmosDB container with an SQL query provided in HTTP request's body and returns query items in json format.\n
+    Queries CosmosDB container with an SQL query provided in HTTP request's body and returns query items in json format.
 
-    Parameters:
-        container (azure.cosmos.ContainerProxy):
-            A ContainerProxy instance representing the retrieved database.
-        query (str):
-            SQL Query string in string format.
-        status_code (int, optional):
-            HTTP status code OK (200). Default value, 200, is returned unchanged if no exception encountered.
-        query_items (str, optional):
-            Default message "Query returned no items.", overwritten if query returns any items.
+    Args:
+        container (azure.cosmos.ContainerProxy): a ContainerProxy instance representing the retrieved database.
+        sql_query (str): SQL query string in string format.
+        default_query_items (str, optional): default message to be returned if SQL query returned no items.\
+            Defaults to "Query returned no items.".
 
     Returns:
-        query_items (str):
-            query items (invoices) in a JSON string: {"id_1": {json_1}, "id_2": {json_2}, {...}, "id_n": {json_n}}, if
+        str: query items (invoices) in a JSON string: {"id_1": {json_1}, "id_2": {json_2}, {...}, "id_n": {json_n}}, if
             SQL query returned any items. If not, a default message "Query returned no items." is returned.
-        status_code (int):
-            HTTP status code OK (200).
 
     Raises:
         QueryCosmosDBError:
-            If CosmosDB container is not found.
-                in function: get_query_items;
-                from exception: cosmos_exceptions.CosmosResourceNotFoundError;
-            If request times out.
-                in function: get_query_items;
-                from exception: cosmos_exceptions.CosmosClientTimeoutError;
-            If query fails to run (get_query_items, cosmos_exceptions.CosmosHttpResponseError).
-                in function: get_query_items;
-                from exception: cosmos_exceptions.CosmosHttpResponseError;
-            If key 'id' not found in iterable.
-                in function iterable_to_dict;
-                from exception: KeyError;
-            If upon iterating through first item in iterable, it is found to carry an information on failed query. in function iterable_to_dict;
-                from exception: cosmos_exceptions.CosmosHttpResponseError;
+            If CosmosDB container is not found (cosmos_exceptions.CosmosResourceNotFoundError).
+            If request times out (cosmos_exceptions.CosmosClientTimeoutError).
+            If query fails to run (cosmos_exceptions.CosmosHttpResponseError).
+            If key 'id' not found in iterable. (KeyError)
+            If upon iterating through first item in iterable, it is found to carry an information on failed query.\
+                (cosmos_exceptions.CosmosHttpResponseError)
             If failed to convert query items dictionary to JSON string (TypeError).
-                in function: dict_to_json;
-                from exception: TypeError;
 
-
-    HOW IT WORKS:\n
-        Step 1. get_query_items sends an SQL query to CosmosDB container. and receives query items (invoices) list as returned by CosmosDB: [{json_1}, {json_2}, {...}, {json_n}]. The list is saved to query_items_list.\n
-        Step 2. list_to_dict converts list of invoices to dictionary following the pattern: {ksef_id: invoice_content}. WATCHOUT: for it ro works, query sent to CosmosDB can't rename column 'id' to anything else.\n
-        Step 3. dict_to_json converts dictionary of invoices to JSON string: {"id_1": {json_1}, "id_2": {json_2}, {...}, "id_n": {json_n}}. JSON string is saved to query_items_json.\n
-        Step 4. query_items_json is returned as string.\n
     """
-
     query_items_raw = get_query_items(container=container, sql_query=sql_query)
 
     query_items_dict = iterable_to_dict(iterable=query_items_raw)
 
-    if query_items_dict == {}:
+    if not query_items_dict:
         # If query returned no items, return default query_items and status code 200.
         # can't use http_client.NO_CONTENT (=204) as it is not allowed to return body with 204
-        log.info(msg=query_items)
-        return query_items, status_code
+        log.info(msg=default_query_items)
+        return default_query_items
 
     query_items = dict_to_json(query_items_dict=query_items_dict)
 
-    log.info(msg="Query items converted to JSON string succesfully.")
-    return query_items, status_code
+    return query_items

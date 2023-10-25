@@ -1,3 +1,5 @@
 azure-cosmos
 azure-functions
 azure-storage-blob
+lxml
+pdfdocument
