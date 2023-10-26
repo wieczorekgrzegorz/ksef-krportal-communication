@@ -18,7 +18,12 @@ def main(xml_bytes: bytes, xslt_transformer: etree.XSLT) -> bytes:
     log.debug(msg=f"XML tree created: {xml_tree}.")
 
     # Transform the XML input into an XSL-FO tree.
-    fo_tree = xslt_transformer(xml_tree)
+    try:
+        fo_tree = xslt_transformer(xml_tree)  # results in etree.XSLTApplyError
+        # XSLTApplyError('Cannot resolve URI http://crd.gov.pl/xml/schematy/dziedzinowe/mf/2022/01/05/eD/DefinicjeTypy/KodyKrajow_v10-0E.xsd')
+    except etree.XSLTApplyError as exc:
+        log.error(msg=f"XSLTApplyError: {exc}.")
+        raise exc
     log.debug(msg=f"XSL-FO tree created: {fo_tree}.")
 
     # Generate the PDF output from the XSL-FO tree.

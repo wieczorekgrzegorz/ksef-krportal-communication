@@ -15,7 +15,9 @@ from utilities import exception_handler, setup, parse_xsl
 log: logging.Logger = logging.getLogger(name="log." + __name__)
 setup.logger(level=logging.DEBUG)
 
-xlst_transformer = parse_xsl.transform_styl_xls_to_XLST(xsl_path="xsl/styl.xsl")
+xlst_transformer = parse_xsl.transform_styl_xls_to_XLST(
+    xsl_path="ksef_documents/styl.xsl"
+)
 
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.FUNCTION)

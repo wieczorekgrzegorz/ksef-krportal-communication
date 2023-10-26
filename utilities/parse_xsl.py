@@ -24,4 +24,5 @@ def transform_styl_xls_to_XLST(xsl_path: str) -> etree.XSLT:  # pylint: disable=
 
 
 if __name__ == "__main__":
-    print(transform_styl_xls_to_XLST(xsl_path="xsl/styl.xsl"))
+    transformer = transform_styl_xls_to_XLST(xsl_path="ksef_documents/styl.xsl")
+    print(transformer.error_log)
